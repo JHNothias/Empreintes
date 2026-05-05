@@ -1,0 +1,3 @@
+Librairies python:
+
+pandas, matplotlib, librosa, numpy, scikit-learn, taichi, networkx, scipy, plotly, python-flucoma, jupyter, colorset, pyqtgraph, colorcet, ipython, anywidget
