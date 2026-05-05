@@ -7,8 +7,8 @@ from functools import reduce
 import pickle
 
 """LazyTree: A class for managing hierarchical, memoized, and dependency-aware computations.
-This class allows you to define a tree-like structure where each node can represent a computation or a value. 
-It supports memoization, dependency tracking, and hierarchical ID management. The tree can also be serialized 
+This class allows you to define a tree-like structure where each node can represent a computation or a value.
+It supports memoization, dependency tracking, and hierarchical ID management. The tree can also be serialized
 and deserialized for persistence.
 Classes:
     LazyTree: Represents the main tree structure.
@@ -70,6 +70,7 @@ class LazyTree:
         self._localget_cache = dict()
         #self.notify = dict()
         #self.react = dict()
+        self._calldepth = 0
         self.report = True
         def _flatten(D: dict):
             res = dict()
@@ -88,7 +89,7 @@ class LazyTree:
 
         def generate_id(pieces:tuple[str]):
             return reduce(lambda a, b: a + '-' + b, pieces[1:], pieces[0])
-    
+
         for k, v in _flatten(d).items():
             id = generate_id(k)
             self.d[self.globalid(id)] = v
@@ -108,18 +109,18 @@ class LazyTree:
             return self.id + '-' + localid
         else:
             return localid
-    
+
     def save(self, filepath:str):
         with open(filepath, 'wb') as f:
             pickle.dump({'memo' : self.memo, "times_changed" : self.times_changed, "dependencies" : self.dependencies}, file=f)
-    
+
     def load(self, filepath:str):
         with open(filepath, 'rb') as f:
             res = pickle.load(file=f)
             self.memo.update(res["memo"])
             self.times_changed.update(res["times_changed"])
             self.dependencies.update(res["dependencies"])
-    
+
     def localget(self, callerid:str, localid:str, recompute:bool = False, force_global_recompute : (bool | None) = None) -> Any:
         """ Implements relative path search.
             If localid is prefixed with "-", it will backtrack the caller path until it finds a match for localid.
@@ -130,7 +131,7 @@ class LazyTree:
             res = self.get(self._localget_cache[callerid][localid], recompute=recompute) # get re-adds self.id.
             self.dependencies[callerid][self._localget_cache[callerid][localid]] = self.times_changed[self._localget_cache[callerid][localid]]
             return res
-    
+
         if localid.startswith("-"):                             # -lid
             callersplit = callerid.split("-")                   # callersplit = [cid1, cid2, cid3] (cid1 is top level)
             for k in range(len(callersplit)):                   # k = 0, 1, 2
@@ -153,43 +154,76 @@ class LazyTree:
             return res
 
     def get(self, id:str, recompute:bool = False, force_global_recompute : (bool | None) = None) -> Any:
-        """ gets the value with the given id.
-            `force_global_recompute`:   - None : No effect
-                                        - True : forces every subsequent get to recompute its return value
-                                        - False : forces every subsequent get to check its return value
-            It recomputes anyway if :   - id is not recorded in memo
-                                        - the memo is out of date (a dependency in the previous call has changed)"""
-        
-        if self.report : print(f"get({id}, recompute = {recompute}, force_global_recompute = {force_global_recompute}) | force_recompute = {self.force_recompute} | ", end=''); start = process_time()
 
-        assert self.globalid(id) in self.d, f"Identifier could not be found in self.get({id}, recompute = {recompute}, force_global_recompute = {force_global_recompute})."
-        recomp = self.force_recompute
+        # ENTER depth first
+        self._calldepth += 1
+        depth = self._calldepth
 
-        if force_global_recompute is not None:
-            self.force_recompute = force_global_recompute
-    
-        outofdate = False
-        if recompute or self.force_recompute or self.globalid(id) not in self.memo or (outofdate := self.is_outofdate(self.globalid(id))):
+        indent = "│   " * (depth - 1)
+        prefix = "├── "
+
+        start = process_time() if self.report else None
+
+        if self.report:
+            print(f"{indent}{prefix}get({id}, recompute={recompute}, "
+                  f"force_global_recompute={force_global_recompute}, "
+                  f"force_recompute={self.force_recompute})")
+
+        try:
+            assert self.globalid(id) in self.d, (
+                f"Identifier not found in self.get({id})"
+            )
+
+            prev_force = self.force_recompute
+
+            if force_global_recompute is not None:
+                self.force_recompute = force_global_recompute
+
+            outofdate = False
+            need_recompute = (
+                recompute
+                or self.force_recompute
+                or self.globalid(id) not in self.memo
+                or (outofdate := self.is_outofdate(self.globalid(id)))
+            )
+
+            if need_recompute:
+                reason = []
+                if self.globalid(id) not in self.memo:
+                    reason.append("not in memo")
+                if recompute:
+                    reason.append("recompute=True")
+                if self.force_recompute:
+                    reason.append("force_recompute=True")
+                if outofdate:
+                    reason.append("dependencies out of date")
+
+                if self.report:
+                    print(f"{indent}│   ↳ recomputing ({', '.join(reason)})")
+
+                res = self.d[self.globalid(id)](self.globalid(id))
+                self.memo[self.globalid(id)] = res
+                self.times_changed[self.globalid(id)] += 1
+            else:
+                if self.report:
+                    print(f"{indent}│   ↳ using memo")
+
+                res = self.memo[self.globalid(id)]
+
+            self.force_recompute = prev_force
+
             if self.report:
-                if not (recompute or self.force_recompute or outofdate): print(f"id NOT FOUND in memo | ", end='');
-                elif outofdate : print(f"dependencies out of date | ", end='')
-    
-            res = self.d[self.globalid(id)](self.globalid(id))
-            self.memo[self.globalid(id)] = res
-            self.times_changed[self.globalid(id)] += 1
-        else:
-            if self.report: print(f"id FOUND in memo | ", end='')
+                elapsed = process_time() - start
+                print(f"{indent}└── done in {elapsed:.6f}s")
 
-            res = self.memo[self.globalid(id)]
+            return res
 
-        self.force_recompute = recomp
+        finally:
+            self._calldepth -= 1
 
-        if self.report : end = process_time(); print(f"finished in {end - start:3f} seconds") # type: ignore
-        return res
-    
     def is_outofdate(self, id):
         return any([self.times_changed[dep] != n for dep, n in self.dependencies[self.globalid(id)].items()])
-    
+
     #def trace(self, id):
     #    if not self.dependencies[self.globalid(id)]:
     #        return []
@@ -210,18 +244,18 @@ class LazyTree:
         self.times_changed[self.globalid(id)] += 1
         if update_memo:
             self.get(self.globalid(id), recompute=True)
-    
+
     def setmemo(self, id:str, value:Any) -> None:
         self.memo[self.globalid(id)] = value
         self.times_changed[self.globalid(id)] += 1
-    
+
     def getsubtree(self, id:str, recompute:bool = False, force_global_recompute : (bool | None) = None) -> Any:
         res = dict()
         for k in self.d:
             if k.startswith(self.globalid(id)):
                 res[k] = self.get(k, recompute = recompute, force_global_recompute = force_global_recompute)
         return res
-    
+
     def rebuild_all(self) -> LazyTreeBuilt:
         """Whipes the memo and builds it fresh."""
         self.memo = dict()
