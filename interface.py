@@ -3,6 +3,7 @@ from main_functions import *
 import librosa
 
 def interface():
+    """Returns an object that orchestrates the whole pipeline."""
     interface = LazyTree({
         "init_settings" : {
             "title" : lambda i : None,

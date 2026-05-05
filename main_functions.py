@@ -34,23 +34,23 @@ def slice_wfm(flucowfm:fluid.FluidSingleOutput, method:Literal['onset', 'even'] 
   signal = signal / peak if peak > 0 else signal
   if method == 'onset':
     slicepoints = np.asarray([0] + list(fluid.onsetslice(flucowfm, metric=metric, threshold=slice_threshold, fftsettings=[1024, -1, -1], minslicelength=minslicelength)))
-  
+
   elif method == 'even':
     slicepoints = np.asarray(range(0, signal.shape[1], slicelength), np.int32)
-  
+
   if n_interpolated_slices > 1:
     slicepoints_new = []
     for s, t in zip(slicepoints[:-1], slicepoints[1:]):
       for n in range(n_interpolated_slices):
          slicepoints_new.append(s + n * (t-s)//n_interpolated_slices)
     slicepoints = slicepoints_new
-  
+
   deltas = np.fromiter((slicepoints[i+1] - slicepoints[i] if i+1 < len(slicepoints) else ((signal.shape[1])) - slicepoints[i]-1 for i in range(len(slicepoints))), dtype=int)
-  
+
   init_slices = [(int(slicepoints[i]), int(slicepoints[i] + sum(deltas[i:min(i+n_interpolated_slices, len(deltas))]))) for i in range(len(slicepoints))] # skips over some slicepoints based on n_intercal
 
   silenceidxs = [i for i in range(len(init_slices)) if np.max(signal[:, init_slices[i][0] : init_slices[i][1]]) <= silence_threshold]
-  
+
   match silence_treatment:
     case 'keep' :
         return np.asarray(init_slices), np.asarray(silenceidxs)
@@ -59,7 +59,7 @@ def slice_wfm(flucowfm:fluid.FluidSingleOutput, method:Literal['onset', 'even'] 
       for _, g in groupby(enumerate(silenceidxs), lambda x: x[0] - x[1]):
           group = list(map(itemgetter(1), g))
           groups.append(group)
- 
+
       glued = []
       used = set(idx for group in groups for idx in group)
       silenceidxsbis = []
@@ -78,7 +78,7 @@ def slice_wfm(flucowfm:fluid.FluidSingleOutput, method:Literal['onset', 'even'] 
                       break
       print(f'glued {len(silenceidxs)} silences for a total of {sum([(init_slices[i][1] - init_slices[i][0]) for i in silenceidxs])/sr:.2f}s')
 
-      
+
       return np.asarray(glued), np.asarray(silenceidxsbis)
     case 'discard':
       res = [s for i, s in enumerate(init_slices) if i not in silenceidxs]
@@ -124,7 +124,7 @@ def showslice_descriptors_overlay(lo, up, slices, flucowfm=None, spect=None, hop
   else:
     trace_overlays = None
   showslice((slices[lo][0], slices[up][1]), flucowfm=flucowfm, spect=spect, hop_length=hop_length, sr=sr, trace_overlays=trace_overlays)
-  
+
 @ti.func
 def _ti_plomp(f1, f2):
     fmin = min(f1, f2)
@@ -167,7 +167,7 @@ def _ti_spectrogram_concordance_matrix(spectrogram_T : ti.types.ndarray(), segme
             for x, y in ti.ndrange(minlen, S):
                 asum += spectrogram_T[x+si, y]**2
                 bsum += spectrogram_T[x+sj, y]**2
-            res[i, j] = 1 - res[i, j]/(ti.sqrt(asum) * ti.sqrt(bsum)) 
+            res[i, j] = 1 - res[i, j]/(ti.sqrt(asum) * ti.sqrt(bsum))
             res[j, i] = res[i, j]
 
 def concordance_matrix_spectrogram(spectrogram:np.ndarray, slices:(list[tuple[int, int]] | np.ndarray), hop_length=512):
@@ -185,9 +185,9 @@ def concordance_matrix_spectrogram(spectrogram:np.ndarray, slices:(list[tuple[in
 
 def symmetrize(a, mode : Literal['u', 'l'] = 'u'):
     if mode == 'u':
-        a = np.triu(a) 
+        a = np.triu(a)
     if mode == 'l':
-        a = np.tril(a) 
+        a = np.tril(a)
     return a + a.T - np.diag(a.diagonal())
 
 def wasserstein_matrix(spectrogram:np.ndarray, slices:(list[tuple[int, int]] | np.ndarray), hop_length=512, p=2):
@@ -223,7 +223,7 @@ def n_least(a:np.ndarray, b:np.ndarray, n:int) -> np.ndarray:
         For each row, mark as True a cell if it is among the (up to)
         n cells that have the least values in `a`, among those that are marked as True in `b`."""
     assert a.shape == b.shape, "a and b must have the same shape."
-    
+
     indices = np.arange(a.shape[1])
     res = np.zeros(a.shape, dtype = bool)
     @np.vectorize
@@ -289,7 +289,7 @@ def crossingGraph(dm:np.ndarray, n_neighbors:int = 3, n_connected_neighbors:int 
     The argument `homogenize` toggles a post-processing step on the graph G making it such that:
     for any distance d, if there exists points i, j such that (i, j) ∈ Edges(G) and dm[i, j] == d, then for all points k, l
     such that dm[k, l] == d, we have (k, l) ∈ Edges(G).
-    
+
     This graph then serves to compute a new distance matrix that will keep these most prominent features while discarding
     the features that are less important to the overall shape of the metric space. This method gives excellent results,
     has a fast execution time compared to other methods, lessens the need for "magic values" that may vary with the metric space
@@ -318,7 +318,7 @@ def localGraph(G:nx.Graph, v:int, iterations:int = 2, _ResGraph:(nx.Graph | None
         ResGraph = _ResGraph
     if iterations == 0:
         return _ResGraph
-        
+
     for i in G.neighbors(v):
         if i != v:
             ResGraph.add_edge(v,i)
@@ -378,7 +378,7 @@ def feature_to_color(feature, slices):
 def compute_features(flucowfm, slices, hop_length, stft_spect, stft_freq, mergeLR = True):
     features = {
         'shape' : lambda i : fluid.spectralshape(i, fftsettings=[1024, hop_length, -1]),
-        'loudness' : lambda i : fluid.loudness(i, hopsize=hop_length),    
+        'loudness' : lambda i : fluid.loudness(i, hopsize=hop_length),
         'novelty' : lambda i : fluid.noveltyfeature(i, fftsettings=[1024, hop_length, -1]),
         'pitch' : lambda i : fluid.pitch(i, fftsettings=[1024, hop_length, -1]),
         'roughness' : lambda _: np.stack([roughness_self(stft_spect[0].T, frequencies=stft_freq), roughness_self(stft_spect[1].T, frequencies=stft_freq)], axis=0),
@@ -394,9 +394,9 @@ def compute_features(flucowfm, slices, hop_length, stft_spect, stft_freq, mergeL
         'loudness' : ['loudness', 'true peak'],
         'time' : ['time']
     }
-    
+
     names = ['centroid', 'spread', 'skew', 'kurtosis', 'rolloff', 'flatness', 'crest', 'pitch measured', 'pitch confidence', 'novelty', 'roughness', 'loudness', 'true peak', 'time']
-    
+
     features_memo = dict()
     for k in features:
         print(k)
@@ -415,7 +415,7 @@ def compute_features(flucowfm, slices, hop_length, stft_spect, stft_freq, mergeL
             features_memo[name] = f
     if mergeLR:
         for name in names:
-            if name + '-l' in features_memo:    
+            if name + '-l' in features_memo:
                 features_memo[name] = (features_memo[name + '-l'] + features_memo[name + '-r'])/2
                 del features_memo[name + '-l']
                 del features_memo[name + '-r']
@@ -431,7 +431,7 @@ def slice_features(features_dict, slices, squash = False, squashfactor = 10):
             return (1 + data) / 2
     else:
         def squashf(x):  return x
-    
+
     colors_memo = dict()
     for name in features_dict:
         if name != 'time':
@@ -492,7 +492,7 @@ def gaussian_smoothness(dm, f, d, params, falloff):
                     b += distrib[i, j] * e(g(i, params[p]), g(j, params[p]))
                 a += (1/M) * b
             res[p] = 1 - a
-            
+
     _ti_gaussian_smoothness(distrib, params, res)
     return res.to_numpy()
 
@@ -516,7 +516,7 @@ def gaussian_localization(dm, f, d, params:(list[Number] | None) = None, falloff
     elif isinstance(params, list):
         params = np.asarray(params) # type: ignore
 
-    
+
     res = ti.ndarray(ti.f64, len(params)) # type: ignore
     g = ti.func(f)
     e = ti.func(d)
@@ -536,7 +536,7 @@ def gaussian_localization(dm, f, d, params:(list[Number] | None) = None, falloff
                     c += invdistrib[i, j] * d
                 a += (1/M) * ti.abs(b-c)
             res[p] = a
-    
+
     if distribs is None :
         distribs = [normal_distribs(dm, falloff=falloff) for falloff in falloffs]
     elif isinstance(distribs, np.ndarray):
@@ -614,14 +614,14 @@ def optimize_descs(descriptors_dict:dict, dm:np.ndarray, n_descriptors:int = 5, 
         #print(weights.shape, colors_vector.shape, np.repeat(weights, colors_vector.shape[0], axis=0).shape)
         newdesc = np.sum(colors_vector * np.repeat(weights, colors_vector.shape[0], axis=0), axis=1)
         newdesc = newdesc - np.min(newdesc)
-        newdesc = newdesc / np.max(newdesc) 
+        newdesc = newdesc / np.max(newdesc)
         #print(newdesc.shape)
         _ti_newdesc = ti.field(ti.f32, newdesc.shape)
         _ti_newdesc.from_numpy(newdesc)
         def g(i, p):
             return _ti_newdesc[i]
         return -gaussian_localization(dm, g, d, np.asarray([0]), 5)[0]
-    
+
     print("optimisation started. Be ready to wait.")
     weights_res = []
     for i in range(n_descriptors):
@@ -636,7 +636,7 @@ def network3d(G:nx.Graph, xyz:np.ndarray,
             nodetext:(Callable | Iterable | None) = None, edgetext:(Callable | Iterable | None) = None,
             showEdges = True, showNodes = True, showHNodes = True, showHEdges = True, nodecolorscale = "rainbow", edgecolorscale = "rainbow", index_conversion=lambda i:i, nodesize = 6) -> go.FigureWidget:
     """G nodes must be integers."""
-        
+
     if isinstance(nodecolors, Iterable):
         ncf = lambda i: nodecolors[i]
     else :
@@ -653,7 +653,7 @@ def network3d(G:nx.Graph, xyz:np.ndarray,
         ecf = lambda e: edgecolors[e]
     else :
         ecf = edgecolors
-        
+
     if nodecolors is None:
         ncf = lambda i: i
     if nodetext is None:
@@ -665,7 +665,7 @@ def network3d(G:nx.Graph, xyz:np.ndarray,
 
     def edgeconvert(e):
         return (index_conversion(e[0]), index_conversion(e[1]))
-        
+
     scatter = go.Scatter3d(
     x = xyz.T[0],
     y = xyz.T[1],
@@ -742,8 +742,7 @@ def network3d(G:nx.Graph, xyz:np.ndarray,
         data.append(hedges)
     if showHNodes and highlight_nodes is not None:
             data.append(hscatter)
-    
+
     layout = go.Layout(scene=dict(aspectmode="data"))
     fig = go.FigureWidget(data=data, layout=layout)
     return fig
-
