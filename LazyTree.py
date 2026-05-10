@@ -2,65 +2,18 @@ from __future__ import annotations
 from time import process_time
 from typing import Callable, Any
 from functools import reduce
-#import inspect, asyncio
-#from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import pickle
 
-"""LazyTree: A class for managing hierarchical, memoized, and dependency-aware computations.
-This class allows you to define a tree-like structure where each node can represent a computation or a value.
-It supports memoization, dependency tracking, and hierarchical ID management. The tree can also be serialized
-and deserialized for persistence.
-Classes:
-    LazyTree: Represents the main tree structure.
-Type Aliases:
-    LazyTreeSpec: A dictionary specifying the structure of the LazyTree.
-    LazyTreeBuilt: A dictionary representing the fully built LazyTree.
-Methods:
-    __init__(d: LazyTreeSpec, id: str, memoize: bool) -> None:
-        Initializes a LazyTree instance with the given structure, ID, and memoization setting.
-    merge(locationid: str, tree: LazyTree) -> None:
-        Merges another LazyTree into the current tree at the specified location.
-    globalid(localid: str) -> str:
-        Converts a local ID into a global ID by prefixing it with the tree's ID.
-    save(filepath: str) -> None:
-        Saves the current state of the tree (memo, times_changed, dependencies) to a file.
-    load(filepath: str) -> None:
-        Loads the state of the tree (memo, times_changed, dependencies) from a file.
-    localget(callerid: str, localid: str, recompute: bool, force_global_recompute: bool | None) -> Any:
-        Retrieves a value using relative path search, with caching and dependency tracking.
-    get(id: str, recompute: bool, force_global_recompute: bool | None) -> Any:
-        Retrieves the value associated with the given ID, with optional recomputation and global recompute control.
-    is_outofdate(id: str) -> bool:
-        Checks if a node's dependencies are out of date.
-    set(id: str, value: Callable | Any, isCallable: bool) -> None:
-        Sets a value or callable for the given ID in the tree.
-    setmemo(id: str, value: Any) -> None:
-        Directly sets a memoized value for the given ID.
-    rebuild_all() -> LazyTreeBuilt:
-        Clears the memo and rebuilds all nodes in the tree.
-Attributes:
-    id (str): The unique identifier for the tree.
-    d (dict): The dictionary representing the tree structure.
-    memo (dict): A dictionary for memoized values.
-    force_recompute (bool): A flag to force recomputation of all nodes.
-    times_changed (dict): Tracks the number of times each node has changed.
-    dependencies (dict): Tracks dependencies between nodes.
-    _localget_cache (dict): Caches local ID lookups for performance.
-    report (bool): Flag to enable or disable reporting of operations.
-Dependencies:
-    - time.process_time: Used for performance measurement.
-    - inspect: Used for introspection (not currently utilized in the code).
-    - asyncio: Used for asynchronous operations (not currently utilized in the code).
-    - concurrent.futures: Provides thread and process pool executors (not currently utilized in the code).
-    - pickle: Used for serialization and deserialization of the tree state."""
+"""LazyTree: A class for managing hierarchical, memoized, and dependency-aware computations."""
 
-
-
-type LazyTreeSpec = dict[str, (Callable | LazyTreeSpec | LazyTree)]
+type LazyTreeSpec = dict[str, (Callable | LazyTreeSpec | "LazyTree")]
 type LazyTreeBuilt = dict[str, Any]
 
+_SENTINEL = object()   # used to detect "not previously memoized"
+
+
 class LazyTree:
-    def __init__(self, d:LazyTreeSpec = dict(), id:str = "", memoize:bool = True) -> None:
+    def __init__(self, d: LazyTreeSpec = dict(), id: str = "", memoize: bool = True) -> None:
         self.id = id
         self.d = dict()
         self.memo = dict()
@@ -68,114 +21,105 @@ class LazyTree:
         self.times_changed = dict()
         self.dependencies = dict()
         self._localget_cache = dict()
-        #self.notify = dict()
-        #self.react = dict()
+        self._computing: set[str] = set()   # FIX 8: cycle detection
         self._calldepth = 0
         self.report = True
+
         def _flatten(D: dict):
             res = dict()
             for k, v in D.items():
                 if isinstance(v, dict):
-                    flattened = _flatten(v)
-                    for l, val in flattened.items():
+                    for l, val in _flatten(v).items():
                         res[(k, *l)] = val
                 elif isinstance(v, LazyTree):
-                    flattened = v.d
-                    for l, val in flattened.items():
+                    for l, val in v.d.items():
                         res[(k, v.globalid(l))] = val
                 else:
                     res[(k,)] = v
             return res
 
-        def generate_id(pieces:tuple[str]):
-            return reduce(lambda a, b: a + '-' + b, pieces[1:], pieces[0])
+        def generate_id(pieces: tuple[str]):
+            return reduce(lambda a, b: a + "-" + b, pieces[1:], pieces[0])
 
         for k, v in _flatten(d).items():
-            id = generate_id(k)
-            self.d[self.globalid(id)] = v
-            self.dependencies[self.globalid(id)] = dict()
-            self.times_changed[self.globalid(id)] = 0
-            self._localget_cache[self.globalid(id)] = dict()
+            gid = self.globalid(generate_id(k))
+            self.d[gid] = v
+            self.dependencies[gid] = dict()
+            self.times_changed[gid] = 0
+            self._localget_cache[gid] = dict()
 
-    def merge(self, locationid:str, tree:LazyTree) -> None:
+    # ------------------------------------------------------------------
+    # Identity helpers
+    # ------------------------------------------------------------------
+
+    def globalid(self, localid: str) -> str:
+        return (self.id + "-" + localid) if self.id else localid
+
+    def _strip_global(self, gid: str) -> str:
+        """Return the local portion of a global id (inverse of globalid)."""
+        if self.id:
+            prefix = self.id + "-"
+            if gid.startswith(prefix):
+                return gid[len(prefix):]
+        return gid
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def merge(self, locationid: str, tree: LazyTree) -> None:
         if locationid in self.d:
             del self.d[locationid]
         tree.id = locationid
         for k, v in tree.d.items():
-            self.d[locationid + '-' + k] = v
+            self.d[locationid + "-" + k] = v
 
-    def globalid(self, localid:str) -> str:
-        if self.id != '':
-            return self.id + '-' + localid
-        else:
-            return localid
+    def save(self, filepath: str):
+        with open(filepath, "wb") as f:
+            pickle.dump(
+                {"memo": self.memo, "times_changed": self.times_changed, "dependencies": self.dependencies},
+                file=f,
+            )
 
-    def save(self, filepath:str):
-        with open(filepath, 'wb') as f:
-            pickle.dump({'memo' : self.memo, "times_changed" : self.times_changed, "dependencies" : self.dependencies}, file=f)
-
-    def load(self, filepath:str):
-        with open(filepath, 'rb') as f:
+    def load(self, filepath: str):
+        with open(filepath, "rb") as f:
             res = pickle.load(file=f)
             self.memo.update(res["memo"])
             self.times_changed.update(res["times_changed"])
             self.dependencies.update(res["dependencies"])
 
-    def localget(self, callerid:str, localid:str, recompute:bool = False, force_global_recompute : (bool | None) = None) -> Any:
-        """ Implements relative path search.
-            If localid is prefixed with "-", it will backtrack the caller path until it finds a match for localid.
-            Otherwise, it will look for a match to localid by backtracking only once.
-            Caches the access for performance reasons.
-        """
-        if localid in self._localget_cache[callerid]:   # caching logic
-            res = self.get(self._localget_cache[callerid][localid], recompute=recompute) # get re-adds self.id.
-            self.dependencies[callerid][self._localget_cache[callerid][localid]] = self.times_changed[self._localget_cache[callerid][localid]]
-            return res
+    # ------------------------------------------------------------------
+    # Core read / write
+    # ------------------------------------------------------------------
 
-        if localid.startswith("-"):                             # -lid
-            callersplit = callerid.split("-")                   # callersplit = [cid1, cid2, cid3] (cid1 is top level)
-            for k in range(len(callersplit)):                   # k = 0, 1, 2
-                fetchloc = callersplit[:-k-2]                   # fetchloc = [cid1, cid2, cid3], [cid1, cid2], [cid1]
-                fetchid = ("-".join(fetchloc) + "-" if fetchloc else "") + localid.removeprefix('-')    # fetchid = cid1-cid2-cid3-lid, cid1-cid2-lid, cid1-lid
-                if fetchid in self.d:                           # fetchid found
-                    res = self.get(fetchid.removeprefix(self.id), recompute=recompute) # get re-adds self.id.
-                    self.dependencies[callerid][fetchid] = self.times_changed[fetchid]
-                    self._localget_cache[callerid][localid] = fetchid
-                    return res
-                raise(KeyError(f'ID not found : {fetchid}'))
-        else:                                              # lid
-            callerid2 = callerid.removeprefix(self.id)           # callerid = cid2-cid3 (cid1 added back later in the get)
-            callersplit = callerid2.split("-")                   # callersplit = [cid2, cid3]
-            fetchloc = callersplit[:len(callersplit) - 1]       # fetchloc = [cid2] (go one level up)
-            fetchid = "-".join(fetchloc) + ("-" if fetchloc else '') + localid        # fetchid cid2-lidz
-            res = self.get(fetchid, recompute=recompute, force_global_recompute=force_global_recompute) # get cid1-cid2-lid
-            self.dependencies[callerid][fetchid] = self.times_changed[fetchid]
-            self._localget_cache[callerid][localid] = fetchid
-            return res
-
-    def get(self, id:str, recompute:bool = False, force_global_recompute : (bool | None) = None) -> Any:
-
-        # ENTER depth first
+    def get(self, id: str, recompute: bool = False, force_global_recompute: bool | None = None) -> Any:
         self._calldepth += 1
         depth = self._calldepth
-
         indent = "│   " * (depth - 1)
         prefix = "├── "
+        start = process_time()
 
-        start = process_time() if self.report else None
+        gid = self.globalid(id)
 
         if self.report:
-            print(f"{indent}{prefix}get({id}, recompute={recompute}, "
-                  f"force_global_recompute={force_global_recompute}, "
-                  f"force_recompute={self.force_recompute})")
-
-        try:
-            assert self.globalid(id) in self.d, (
-                f"Identifier not found in self.get({id})"
+            print(
+                f"{indent}{prefix}get({id}, recompute={recompute}, "
+                f"force_global_recompute={force_global_recompute}, "
+                f"force_recompute={self.force_recompute})"
             )
 
-            prev_force = self.force_recompute
+        try:
+            if gid not in self.d:
+                raise KeyError(f"Identifier not found in self.get({id!r})")
 
+            # FIX 8: cycle detection
+            if gid in self._computing:
+                raise RecursionError(
+                    f"Circular dependency detected: '{gid}' is already being computed. "
+                    f"Current chain: {self._computing}"
+                )
+
+            prev_force = self.force_recompute
             if force_global_recompute is not None:
                 self.force_recompute = force_global_recompute
 
@@ -183,13 +127,13 @@ class LazyTree:
             need_recompute = (
                 recompute
                 or self.force_recompute
-                or self.globalid(id) not in self.memo
-                or (outofdate := self.is_outofdate(self.globalid(id)))
+                or gid not in self.memo
+                or (outofdate := self.is_outofdate(gid))  # FIX 1: pass gid directly
             )
 
             if need_recompute:
                 reason = []
-                if self.globalid(id) not in self.memo:
+                if gid not in self.memo:
                     reason.append("not in memo")
                 if recompute:
                     reason.append("recompute=True")
@@ -197,68 +141,281 @@ class LazyTree:
                     reason.append("force_recompute=True")
                 if outofdate:
                     reason.append("dependencies out of date")
-
                 if self.report:
                     print(f"{indent}│   ↳ recomputing ({', '.join(reason)})")
 
-                res = self.d[self.globalid(id)](self.globalid(id))
-                self.memo[self.globalid(id)] = res
-                self.times_changed[self.globalid(id)] += 1
+                # FIX 8: mark as computing before calling, clear after
+                self._computing.add(gid)
+                try:
+                    res = self.d[gid](self, gid)
+                finally:
+                    self._computing.discard(gid)
+
+                # FIX 9: only increment times_changed when the value actually changed
+                old_val = self.memo.get(gid, _SENTINEL)
+                self.memo[gid] = res
+                try:
+                    value_changed = bool((old_val is _SENTINEL) or (res != old_val))
+                except Exception:
+                    value_changed = True  # incomparable types → assume changed
+                if value_changed:
+                    self.times_changed[gid] += 1
             else:
                 if self.report:
                     print(f"{indent}│   ↳ using memo")
-
-                res = self.memo[self.globalid(id)]
+                res = self.memo[gid]
 
             self.force_recompute = prev_force
-
             if self.report:
                 elapsed = process_time() - start
                 print(f"{indent}└── done in {elapsed:.6f}s")
-
             return res
 
         finally:
             self._calldepth -= 1
 
-    def is_outofdate(self, id):
-        return any([self.times_changed[dep] != n for dep, n in self.dependencies[self.globalid(id)].items()])
+    def set(self, id: str, value: Callable | Any, isCallable=False, update_memo=True) -> None:
+        gid = self.globalid(id)
 
-    #def trace(self, id):
-    #    if not self.dependencies[self.globalid(id)]:
-    #        return []
-    #    else:
-    #        res = []
-    #        for dep in self.dependencies[self.globalid(id)]:
-    #            if dep == self.globalid(id):
-    #                res.append(self.globalid(id))
-    #            else:
-    #                res.append(self.trace(dep))
-    #        return res
+        # Ensure the node is registered (supports adding new nodes via set)
+        if gid not in self.d:
+            self.dependencies[gid] = dict()
+            self.times_changed[gid] = 0
+            self._localget_cache[gid] = dict()
 
-    def set(self, id:str, value:(Callable | Any), isCallable = False, update_memo=True) -> None:
         if isCallable:
-            self.d[self.globalid(id)] = value
+            self.d[gid] = value
         else:
-            self.d[self.globalid(id)] = lambda i : value
-        self.times_changed[self.globalid(id)] += 1
+            self.d[gid] = lambda tree, i: value
+
+        # FIX 4: invalidate _localget_cache for any caller that resolved to this gid
+        self._invalidate_localget_cache(gid)
+
         if update_memo:
-            self.get(self.globalid(id), recompute=True)
+            # FIX 2: pass local id so get() can globalise correctly (was passing gid → double prefix)
+            self.get(id, recompute=True)
+        else:
+            # Still bump times_changed so dependents know the node changed
+            self.times_changed[gid] += 1
 
-    def setmemo(self, id:str, value:Any) -> None:
-        self.memo[self.globalid(id)] = value
-        self.times_changed[self.globalid(id)] += 1
+    def setmemo(self, id: str, value: Any) -> None:
+        gid = self.globalid(id)
+        old_val = self.memo.get(gid, _SENTINEL)
+        self.memo[gid] = value
+        # FIX 9: only increment when value changed
+        try:
+            value_changed = bool((old_val is _SENTINEL) or (value != old_val))
+        except Exception:
+            value_changed = True
+        if value_changed:
+            self.times_changed[gid] += 1
+        # FIX 4: invalidate cache entries pointing at this gid
+        self._invalidate_localget_cache(gid)
 
-    def getsubtree(self, id:str, recompute:bool = False, force_global_recompute : (bool | None) = None) -> Any:
+    def _invalidate_localget_cache(self, gid: str) -> None:
+        """Remove every _localget_cache entry whose resolved global id is *gid*."""
+        for cache in self._localget_cache.values():
+            stale = [local_key for local_key, resolved in cache.items() if resolved == gid]
+            for local_key in stale:
+                del cache[local_key]
+
+    # ------------------------------------------------------------------
+    # Dependency validation
+    # ------------------------------------------------------------------
+
+    def is_outofdate(self, gid: str) -> bool:
+        # FIX 1: caller already passes a global id; do NOT call globalid() again.
+        # FIX 7: guard against dependencies that no longer exist in the tree.
+        deps = self.dependencies.get(gid)
+        if not deps:
+            return False
+        for dep, recorded_count in deps.items():
+            if dep not in self.times_changed:
+                # Dependency was removed → conservatively treat as out-of-date
+                return True
+            if self.times_changed[dep] != recorded_count:
+                return True
+            if self.is_outofdate(dep):
+                return True
+        return False
+
+    def validate_dependencies(self) -> dict[str, list[str]]:
+        """
+        Audit every recorded dependency.
+        Returns a dict mapping node-id → list of problem descriptions.
+        An empty dict means everything is consistent.
+        """
+        problems: dict[str, list[str]] = {}
+
+        for gid in self.d:
+            node_problems: list[str] = []
+
+            # 1. Node has no entry in times_changed
+            if gid not in self.times_changed:
+                node_problems.append("missing from times_changed")
+
+            # 2. Node has no entry in dependencies
+            if gid not in self.dependencies:
+                node_problems.append("missing from dependencies")
+            else:
+                for dep, recorded in self.dependencies[gid].items():
+                    # 3. Dependency refers to an unknown node
+                    if dep not in self.d:
+                        node_problems.append(f"dependency '{dep}' not in self.d")
+                    # 4. Recorded count is ahead of the dep's actual count (corruption)
+                    elif dep not in self.times_changed:
+                        node_problems.append(f"dependency '{dep}' missing from times_changed")
+                    elif recorded > self.times_changed[dep]:
+                        node_problems.append(
+                            f"dependency '{dep}': recorded count {recorded} > "
+                            f"actual count {self.times_changed[dep]} (corrupt)"
+                        )
+
+            # 5. Memo exists for a node that has no callable
+            if gid in self.memo and gid not in self.d:
+                node_problems.append("memo entry exists but node is not in self.d")
+
+            if node_problems:
+                problems[gid] = node_problems
+
+        # 6. Dangling memo entries (node was removed)
+        for gid in self.memo:
+            if gid not in self.d:
+                problems.setdefault(gid, []).append("memo entry has no corresponding node in self.d")
+
+        return problems
+
+    def detect_cycles(self) -> list[list[str]]:
+        """
+        Return a list of cycles found in the *static* dependency graph.
+        Each cycle is represented as an ordered list of node ids.
+        Uses DFS with colouring (white / grey / black).
+        Note: static deps are only populated after nodes have been computed at
+        least once, so this is most useful after rebuild_all().
+        """
+        WHITE, GREY, BLACK = 0, 1, 2
+        colour = {gid: WHITE for gid in self.d}
+        cycles: list[list[str]] = []
+        path: list[str] = []
+
+        def dfs(node: str):
+            colour[node] = GREY
+            path.append(node)
+            for dep in self.dependencies.get(node, {}):
+                if dep not in colour:
+                    continue   # unknown dep, validate_dependencies() will catch it
+                if colour[dep] == GREY:
+                    # Found a cycle – extract the loop portion
+                    cycle_start = path.index(dep)
+                    cycles.append(path[cycle_start:] + [dep])
+                elif colour[dep] == WHITE:
+                    dfs(dep)
+            path.pop()
+            colour[node] = BLACK
+
+        for gid in self.d:
+            if colour[gid] == WHITE:
+                dfs(gid)
+
+        return cycles
+
+    # ------------------------------------------------------------------
+    # Relative-path lookup
+    # ------------------------------------------------------------------
+
+    def localget(
+        self,
+        callerid: str,
+        localid: str,
+        recompute: bool = False,
+        force_global_recompute: bool | None = None,
+    ) -> Any:
+        """Relative-path lookup with caching and dependency recording."""
+
+        # Ensure caller has a cache bucket
+        if callerid not in self._localget_cache:
+            self._localget_cache[callerid] = dict()
+
+        # --- cache hit ---
+        if localid in self._localget_cache[callerid]:
+            cached_gid = self._localget_cache[callerid][localid]
+            if cached_gid not in self.d:
+                # FIX 5: cached target was removed → evict and fall through
+                del self._localget_cache[callerid][localid]
+            else:
+                # FIX 4 (cache path): strip global prefix before calling get()
+                res = self.get(
+                    self._strip_global(cached_gid),
+                    recompute=recompute,
+                    force_global_recompute=force_global_recompute,
+                )
+                self.dependencies[callerid][cached_gid] = self.times_changed[cached_gid]
+                return res
+
+        # --- cache miss ---
+        if localid.startswith("-"):
+            # Backtrack through every ancestor level until a match is found
+            callersplit = callerid.split("-")
+            for k in range(len(callersplit)):
+                fetchloc = callersplit[: -(k + 2)] if (k + 2) <= len(callersplit) else []
+                bare = localid.removeprefix("-")
+                fetchid = ("-".join(fetchloc) + "-" if fetchloc else "") + bare
+                if fetchid in self.d:
+                    res = self.get(
+                        self._strip_global(fetchid),
+                        recompute=recompute,
+                        force_global_recompute=force_global_recompute,
+                    )
+                    self.dependencies[callerid][fetchid] = self.times_changed[fetchid]
+                    self._localget_cache[callerid][localid] = fetchid
+                    return res
+            # FIX 3: raise AFTER the loop, not inside it
+            raise KeyError(f"ID not found via backtrack: '{localid}' from caller '{callerid}'")
+        else:
+            # One level up only
+            # FIX 6: use _strip_global (with dash) so split is always clean
+            callerid_local = self._strip_global(callerid)
+            callersplit = callerid_local.split("-")
+            fetchloc = callersplit[: len(callersplit) - 1]
+            fetchid_local = "-".join(fetchloc) + ("-" if fetchloc else "") + localid
+            fetchid_global = self.globalid(fetchid_local)
+            if fetchid_global not in self.d:
+                raise KeyError(
+                    f"ID not found: '{localid}' resolved to '{fetchid_global}' "
+                    f"(caller '{callerid}')"
+                )
+            res = self.get(fetchid_local, recompute=recompute, force_global_recompute=force_global_recompute)
+            self.dependencies[callerid][fetchid_global] = self.times_changed[fetchid_global]
+            self._localget_cache[callerid][localid] = fetchid_global
+            return res
+
+    # ------------------------------------------------------------------
+    # Subtree helpers
+    # ------------------------------------------------------------------
+
+    def getsubtree(
+        self,
+        id: str,
+        recompute: bool = False,
+        force_global_recompute: bool | None = None,
+    ) -> dict:
         res = dict()
+        prefix = self.globalid(id)
         for k in self.d:
-            if k.startswith(self.globalid(id)):
-                res[k] = self.get(k, recompute = recompute, force_global_recompute = force_global_recompute)
+            if k.startswith(prefix):
+                key = "-".join(k.split("-")[1:])
+                res[key] = self.get(
+                    self._strip_global(k),
+                    recompute=recompute,
+                    force_global_recompute=force_global_recompute,
+                )
         return res
 
     def rebuild_all(self) -> LazyTreeBuilt:
-        """Whipes the memo and builds it fresh."""
+        """Wipe memo and dependencies, then rebuild every node fresh."""
         self.memo = dict()
+        # Reset dependency snapshots so is_outofdate starts clean
+        self.dependencies = {k: {} for k in self.d}
         for k in self.d:
-            self.get(k)
+            self.get(self._strip_global(k))
         return self.memo
