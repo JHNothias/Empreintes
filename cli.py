@@ -5,55 +5,55 @@ from generate_data import run_analysis_pipeline
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Audio dataset analysis pipeline (FluCoMa-based)"
+        description="Basic cli interface for the Empreintes algorithm.\nFor now, the analysis pipeline is fixed and requires flucoma-python and taichi to be installed and operational."
     )
 
     parser.add_argument(
         "--audio_folder",
         type=str,
         required=True,
-        help="Path to folder containing audio files (.wav)"
+        help="Path to folder containing audio files (.wav only for the moment)."
     )
 
     parser.add_argument(
         "--save_folder",
         type=str,
         required=True,
-        help="Path where output data will be stored"
+        help="Path where output data will be stored. A new folder is created per dataset."
     )
 
     parser.add_argument(
         "--dataset_title",
         type=str,
         default="dataset",
-        help="Name of the dataset"
+        help="Name of the dataset, i.e. the name of the folder created in the `save_folder`."
     )
 
     parser.add_argument(
         "--filenames",
         nargs="+",
         default=None,
-        help="List of .wav files to process (default: all .wav in audio_folder)"
+        help="List of .wav files to process (default: all .wav in audio_folder)."
     )
 
     parser.add_argument(
         "--slicelength_seconds",
         type=float,
         default=2.0,
-        help="Slice length in seconds"
+        help="Slice length in seconds (default : 2 seconds)."
     )
 
     parser.add_argument(
         "--n_interpolated_slices",
         type=int,
         default=4,
-        help="Number of interpolated slices"
+        help="Number of interpolated slices (default : 4. For the default slicelength of 2 seconds, this means a slice every 0.5 seconds)."
     )
 
     parser.add_argument(
         "--save_spectrogram",
         action="store_true",
-        help="Enable spectrogram saving (REQUIRES A LOT OF SPACE)"
+        help="Enable spectrogram saving in the pickle for later analysis (REQUIRES A LOT OF SPACE)."
     )
 
     return parser.parse_args()
