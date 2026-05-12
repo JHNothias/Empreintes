@@ -3,6 +3,7 @@ import pprint
 import os
 from generate_data import run_analysis_pipeline
 
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Basic cli interface for the Empreintes algorithm.\nFor now, the analysis pipeline is fixed and requires flucoma-python and taichi to be installed and operational."
@@ -48,6 +49,13 @@ def parse_args():
         type=int,
         default=4,
         help="Number of interpolated slices (default : 4. For the default slicelength of 2 seconds, this means a slice every 0.5 seconds)."
+    )
+
+    parser.add_argument(
+        "--colormap",
+        type=str,
+        default="rainbow",
+        help="color map used for the visualisations : pick among 'aggrnyl', 'agsunset', 'blackbody', 'bluered', 'blues', 'blugrn', 'bluyl', 'brwnyl', 'bugn', 'bupu', 'burg', 'burgyl', 'cividis', 'darkmint', 'electric', 'emrld', 'gnbu', 'greens', 'greys', 'hot', 'inferno', 'jet', 'magenta', 'magma', 'mint', 'orrd', 'oranges', 'oryel', 'peach', 'pinkyl', 'plasma', 'plotly3', 'pubu', 'pubugn', 'purd', 'purp', 'purples', 'purpor', 'rainbow', 'rdbu', 'rdpu', 'redor', 'reds', 'sunset', 'sunsetdark', 'teal', 'tealgrn', 'turbo', 'viridis', 'ylgn', 'ylgnbu', 'ylorbr', 'ylorrd','algae', 'amp', 'deep', 'dense', 'gray', 'haline', 'ice', 'matter', 'solar', 'speed', 'tempo', 'thermal', 'turbid', 'armyrose','brbg', 'earth', 'fall', 'geyser', 'prgn', 'piyg', 'picnic', 'portland', 'puor', 'rdgy', 'rdylbu', 'rdylgn', 'spectral', 'tealrose', 'temps', 'tropic', 'balance', 'curl', 'delta', 'oxy', 'edge', 'hsv', 'icefire', 'phase', 'twilight', 'mrybm' and 'mygbm'. you can reverse the colormap by appending '_r' to the end."
     )
 
     parser.add_argument(
@@ -100,7 +108,8 @@ def main():
         filenames=args.filenames,
         slicelength_seconds=args.slicelength_seconds,
         n_interpolated_slices=args.n_interpolated_slices,
-        save_spectrogram=args.save_spectrogram
+        save_spectrogram=args.save_spectrogram,
+        colorscale = args.colormap
     )
 
 
