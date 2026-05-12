@@ -24,6 +24,7 @@ class LazyTree:
         self._computing: set[str] = set()   # FIX 8: cycle detection
         self._calldepth = 0
         self.report = True
+        self.spec = d
 
         def _flatten(D: dict):
             res = dict()
@@ -47,6 +48,10 @@ class LazyTree:
             self.dependencies[gid] = dict()
             self.times_changed[gid] = 0
             self._localget_cache[gid] = dict()
+
+    def new(self):
+        """Returns a fresh instance of the tree without any ulterior modifications."""
+        return LazyTree(self.spec)
 
     # ------------------------------------------------------------------
     # Identity helpers
@@ -198,7 +203,7 @@ class LazyTree:
             # Still bump times_changed so dependents know the node changed
             self.times_changed[gid] += 1
 
-    def setmemo(self, id: str, value: Any) -> None:
+    def setmemo(self, id: str, value: Any, invalidate:bool = True) -> None:
         gid = self.globalid(id)
         old_val = self.memo.get(gid, _SENTINEL)
         self.memo[gid] = value
@@ -210,7 +215,8 @@ class LazyTree:
         if value_changed:
             self.times_changed[gid] += 1
         # FIX 4: invalidate cache entries pointing at this gid
-        self._invalidate_localget_cache(gid)
+        if invalidate:
+            self._invalidate_localget_cache(gid)
 
     def _invalidate_localget_cache(self, gid: str) -> None:
         """Remove every _localget_cache entry whose resolved global id is *gid*."""

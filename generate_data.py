@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def run_analysis_pipeline(audio_folder:str, save_folder:str, dataset_title:str, filenames: list[str],
-    slicelength_seconds:float, n_interpolated_slices:int, save_spectrogram:bool):
+    slicelength_seconds:float, n_interpolated_slices:int, save_spectrogram:bool, colorscale:str):
 
     scores = dict()
     audio_folder = audio_folder.removesuffix('/') + '/'
@@ -48,7 +48,7 @@ def run_analysis_pipeline(audio_folder:str, save_folder:str, dataset_title:str, 
         interface.get('features-scores', recompute=True)
         if not save_spectrogram :
             print('Deleting spectrogram...')
-            interface.setmemo('spectrograms-mel', None)
+            interface.setmemo('spectrograms-mel', None, invalidate = False)
         print("Saving...")
         interface.save(interface.get('init_settings-save_filepath'))
 
@@ -71,7 +71,7 @@ def run_analysis_pipeline(audio_folder:str, save_folder:str, dataset_title:str, 
         print('Generating descriptor networks...')
         for k in interface.get('features-sliced').keys():
             print(f"{k}: {interface.get('features-scores')[k]}")
-            fig = network3d(G=interface.get('graph'), xyz=interface.get('embedding-path'), nodecolors=interface.get('features-sliced')[k])
+            fig = network3d(G=interface.get('graph'), xyz=interface.get('embedding-path'), nodecolors=interface.get('features-sliced')[k], nodecolorscale=colorscale, edgecolorscale=colorscale)
 
             figsavepath = save_folder + dataset_title + f"/{interface.get('init_settings-title')}/{interface.get('init_settings-title')}_network_{k}.html"
             os.makedirs(os.path.dirname(figsavepath), exist_ok=True)
