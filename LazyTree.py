@@ -213,7 +213,8 @@ class LazyTree:
         except Exception:
             value_changed = True
         if value_changed:
-            self.times_changed[gid] += 1
+            if invalidate :
+                self.times_changed[gid] += 1
         # FIX 4: invalidate cache entries pointing at this gid
         if invalidate:
             self._invalidate_localget_cache(gid)
