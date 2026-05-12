@@ -1,4 +1,5 @@
 from __future__ import annotations
+from pathlib import Path
 from time import process_time
 from typing import Callable, Any
 from functools import reduce
@@ -86,7 +87,7 @@ class LazyTree:
                 file=f,
             )
 
-    def load(self, filepath: str):
+    def load(self, filepath: (str | Path)):
         with open(filepath, "rb") as f:
             res = pickle.load(file=f)
             self.memo.update(res["memo"])

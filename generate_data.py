@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def run_analysis_pipeline(audio_folder:str, save_folder:str, dataset_title:str, filenames: list[str],
-    slicelength_seconds:float, n_interpolated_slices:int, save_spectrogram:bool, colorscale:str):
+    slicelength_seconds:float, n_interpolated_slices:int, save_spectrogram:bool, colorscale:str, restart:bool):
 
     scores = dict()
     audio_folder = audio_folder.removesuffix('/') + '/'
@@ -22,35 +22,47 @@ def run_analysis_pipeline(audio_folder:str, save_folder:str, dataset_title:str, 
 
     print("Imports OK, started baking.")
     for filename in filenames:
+        title = filename.removesuffix(".wav")
         interface = Int.interface()
-        ti.reset()
-        ti.init(arch=ti.gpu, default_fp=ti.types.f32, log_level=ti.ERROR)
-        print('-'*10 + f"Started the processing of {filename}." + '-'*10)
+        savepath = save_folder + dataset_title +f'/{title}_data.pickle'
+        skip_recompute_flag = False
+        if restart and title + '_data.pickle' in os.listdir(Path(save_folder + dataset_title)):
+            print(f"found {title + '_data.pickle'} in savepath, trying to load it.")
+            try :
+                interface.load(savepath)
+                skip_recompute_flag = True
+                print("Loading succeded, skipping computation.")
+            except :
+                print("Loading failed, recomputing.")
 
-        path = audio_folder + filename
-        savepath = save_folder + dataset_title +f'/{filename.removesuffix('.wav')}_data.pickle'
+        if not skip_recompute_flag :
+            ti.reset()
+            ti.init(arch=ti.gpu, default_fp=ti.types.f32, log_level=ti.ERROR)
+            print('-'*10 + f"Started the processing of {filename}." + '-'*10)
 
-        interface.set('init_settings-title', filename.removesuffix('.wav'))
-        interface.get('init_settings-title')
-        interface.set('init_settings-filepath', path)
-        interface.set('init_settings-save_filepath', savepath)
-        interface.set('init_settings-slicelength_seconds', slicelength_seconds)
-        interface.set('init_settings-n_interpolated_slices', n_interpolated_slices)
-        interface.set('init_settings-slice_distance', 'concordance')
+            path = audio_folder + filename
+
+            interface.set('init_settings-title', title)
+            interface.get('init_settings-title')
+            interface.set('init_settings-filepath', path)
+            interface.set('init_settings-save_filepath', savepath)
+            interface.set('init_settings-slicelength_seconds', slicelength_seconds)
+            interface.set('init_settings-n_interpolated_slices', n_interpolated_slices)
+            interface.set('init_settings-slice_distance', 'concordance')
 
 
-        os.makedirs(os.path.dirname(savepath), exist_ok=True)
+            os.makedirs(os.path.dirname(savepath), exist_ok=True)
 
-        print("starting parameters :")
-        pprint.pp(interface.getsubtree("init_settings", recompute=True))
-        interface.report = True
-        interface.memo = dict()
-        interface.get('features-scores', recompute=True)
-        if not save_spectrogram :
-            print('Deleting spectrogram...')
-            interface.setmemo('spectrograms-mel', None, invalidate = False)
-        print("Saving...")
-        interface.save(interface.get('init_settings-save_filepath'))
+            print("starting parameters :")
+            pprint.pp(interface.getsubtree("init_settings", recompute=True))
+            interface.report = True
+            interface.memo = dict()
+            interface.get('features-scores', recompute=True)
+            if not save_spectrogram :
+                print('Deleting spectrogram...')
+                interface.setmemo('spectrograms-mel', None, invalidate = False)
+            print("Saving...")
+            interface.save(interface.get('init_settings-save_filepath'))
 
         print('Generating descriptors plot...')
         fig = px.line(np.stack(list(interface.get('features-sliced').values())).T)

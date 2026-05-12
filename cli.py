@@ -64,6 +64,12 @@ def parse_args():
         help="Enable spectrogram saving in the pickle for later analysis (REQUIRES A LOT OF SPACE)."
     )
 
+    parser.add_argument(
+        "--restart",
+        action="store_true",
+        help="Restarts where the previous analysis left off."
+    )
+
     return parser.parse_args()
 
 
@@ -109,7 +115,8 @@ def main():
         slicelength_seconds=args.slicelength_seconds,
         n_interpolated_slices=args.n_interpolated_slices,
         save_spectrogram=args.save_spectrogram,
-        colorscale = args.colormap
+        colorscale = args.colormap,
+        restart = args.restart
     )
 
 
