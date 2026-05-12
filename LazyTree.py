@@ -83,7 +83,7 @@ class LazyTree:
     def save(self, filepath: str):
         with open(filepath, "wb") as f:
             pickle.dump(
-                {"memo": self.memo, "times_changed": self.times_changed, "dependencies": self.dependencies},
+                {"memo": self.memo, "times_changed": self.times_changed, "dependencies": self.dependencies, "d" : self.d},
                 file=f,
             )
 
@@ -91,6 +91,7 @@ class LazyTree:
         with open(filepath, "rb") as f:
             res = pickle.load(file=f)
             self.memo.update(res["memo"])
+            self.d.update(res["d"])
             self.times_changed.update(res["times_changed"])
             self.dependencies.update(res["dependencies"])
 
