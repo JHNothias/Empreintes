@@ -3,7 +3,8 @@ from pathlib import Path
 from time import process_time
 from typing import Callable, Any
 from functools import reduce
-import pickle
+import dill
+from sklearn.decomposition import dict_learning_online
 
 """LazyTree: A class for managing hierarchical, memoized, and dependency-aware computations."""
 
@@ -82,18 +83,19 @@ class LazyTree:
 
     def save(self, filepath: str):
         with open(filepath, "wb") as f:
-            pickle.dump(
-                {"memo": self.memo, "times_changed": self.times_changed, "dependencies": self.dependencies, "d" : self.d},
+            dill.dump(
+                {"memo": self.memo, "times_changed": self.times_changed, "dependencies": self.dependencies, "d" : self.d, "spec" : self.spec},
                 file=f,
             )
 
     def load(self, filepath: (str | Path)):
         with open(filepath, "rb") as f:
-            res = pickle.load(file=f)
+            res = dill.load(file=f)
             self.memo.update(res["memo"])
             self.d.update(res["d"])
             self.times_changed.update(res["times_changed"])
             self.dependencies.update(res["dependencies"])
+            self.spec.update(res["spec"])
 
     # ------------------------------------------------------------------
     # Core read / write
@@ -181,7 +183,7 @@ class LazyTree:
         finally:
             self._calldepth -= 1
 
-    def set(self, id: str, value: Callable | Any, isCallable=False, update_memo=True) -> None:
+    def set(self, id: str, value: Callable | Any, isCallable=False, update_memo=True, invalidate = True) -> None:
         gid = self.globalid(id)
 
         # Ensure the node is registered (supports adding new nodes via set)
@@ -196,14 +198,15 @@ class LazyTree:
             self.d[gid] = lambda tree, i: value
 
         # FIX 4: invalidate _localget_cache for any caller that resolved to this gid
-        self._invalidate_localget_cache(gid)
+        if invalidate:
+            self._invalidate_localget_cache(gid)
 
         if update_memo:
-            # FIX 2: pass local id so get() can globalise correctly (was passing gid → double prefix)
-            self.get(id, recompute=True)
+            self.setmemo(id, (value if not isCallable else value(self, gid)), invalidate)
         else:
             # Still bump times_changed so dependents know the node changed
-            self.times_changed[gid] += 1
+            if invalidate :
+                self.times_changed[gid] += 1
 
     def setmemo(self, id: str, value: Any, invalidate:bool = True) -> None:
         gid = self.globalid(id)
