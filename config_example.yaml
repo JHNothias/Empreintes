@@ -1,0 +1,70 @@
+dataset_type:
+  presliced : false # sliceable, presliced
+  groups : false
+
+# false, false : <dataset>/*<objects>.wav : need to slice each object and run an analysis per-object. Usecase : corpus of complete recordings.
+# false, true : <dataset>/*<objects>/*<samples>.wav : need to slice each sample but the analysis should be run on the collective space of slices of an object. Usecase : corpus of fragmented recordings, or recordings that should be considered to be of the same thing (ex : same environement at different times of day).
+# true, false : <dataset = object>/*<slices>.wav : the dataset is an object that should be analysed, each sample is a point. Usecase : presliced recording.
+# true, true : <dataset>/*<objects>/*<slices>.wav each sample represents a slice. Usecase : dataset of presliced recordings.
+
+audio_descriptors:
+  FluCoMa:
+    centroid:
+      use : true
+      parameters :
+        ...
+    spread:
+      use : true
+      parameters :
+        ...
+    skew:
+      use : true
+      parameters :
+        ...
+    kurtosis:
+      use : true
+      parameters :
+        ...
+    rolloff:
+      use : true
+      parameters :
+        ...
+    flatness:
+      use : true
+      parameters :
+        ...
+    crest:
+      use : true
+      parameters :
+        ...
+  misc:
+    roughness:
+      use : true
+      parameters :
+        ...
+    time :
+      use : true
+      parameters :
+        ...
+descriptor_transforms :
+  # at least one must be used
+  average :
+    use : true
+  variance :
+    use : true
+  running_total :
+    use : true
+  average_difference :
+    use : true
+  novelty_hh :
+    use : true
+    parameters :
+      kernel_size : 3
+  novelty_hnh :
+    use : true
+    parameters :
+      kernel_size : 3
+  novelty_nhh :
+    use : true
+    parameters :
+      kernel_size : 3
