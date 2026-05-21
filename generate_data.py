@@ -43,7 +43,6 @@ def run_analysis_pipeline(audio_folder:str, save_folder:str, dataset_title:str, 
             path = audio_folder + filename
 
             interface.set('init_settings-title', title)
-            interface.get('init_settings-title')
             interface.set('init_settings-filepath', path)
             interface.set('init_settings-save_filepath', savepath)
             interface.set('init_settings-slicelength_seconds', slicelength_seconds)
