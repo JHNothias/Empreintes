@@ -88,31 +88,38 @@ def novelty_hh(feature : np.ndarray, kernel_radius:int = 3, gaussian_var: float 
     novelty = running_total(np.convolve(feature, kernel, mode='valid'))
     return novelty
 
-def average(feature : np.ndarray, slices : list[tuple[int, int]]) -> np.ndarray:
-    """
-    `feature` : feature values over the duration of the audio.
-    `slice` : audio slice [start, end) in samples.
-    `hop` : hop size used in computing the feature.
-    """
+def novelty_hnh(feature : np.ndarray, kernel_radius:int = 3, gaussian_var: float = 1.0) -> np.ndarray:
+    kernel = novelty_kernel(kernel_radius=kernel_radius, gaussian_var=gaussian_var, kerneltype='hnh')
+    # Apply the symmetric kernel to compute novelty
+    novelty = running_total(np.convolve(feature, kernel, mode='valid'))
+    return novelty
+
+def novelty_nhh(feature : np.ndarray, kernel_radius:int = 3, gaussian_var: float = 1.0) -> np.ndarray:
+    kernel = novelty_kernel(kernel_radius=kernel_radius, gaussian_var=gaussian_var, kerneltype='nhh')
+    # Apply the symmetric kernel to compute novelty
+    novelty = running_total(np.convolve(feature, kernel, mode='valid'))
+    return novelty
+
+def variance(feature : np.ndarray, kernel_size : int = 200):
+    return np.fromiter(map(np.var, [feature[i, np.min(i+kernel_size, len(feature))] for i in range(len(feature))]), dtype=float)
+
+def slice_feature(feature : np.ndarray, slices : list[tuple[int, int]], mode: Literal['avg', 'max', 'min', 'first', 'last'] = 'avg', normalize : bool = True) -> np.ndarray:
+    func = {'avg' : np.average,
+            'max' : np.max,
+            'min' : np.min,
+            'first' : lambda arr : arr[0],
+            'last' : lambda arr : arr[-1]}[mode]
+
     hop = slices[-1][1] // feature.shape[0]
-    res =  np.fromiter((np.average(feature[slice[0]//hop : slice[1]//hop]) for slice in slices), dtype=float)
+    res =  np.fromiter((func(feature[slice[0]//hop : slice[1]//hop]) for slice in slices),
+        dtype=float)
     np.nan_to_num(res, copy=False)
-    res = res - np.min(res)
-    res = res/np.max(np.abs(res)) if np.any(res != 0) else res
+
+    if normalize :
+        res = res - np.min(res)
+        res = res/np.max(np.abs(res)) if np.any(res != 0) else res
     return res
 
-def variance(feature : np.ndarray, slices : list[tuple[int, int]]) -> np.ndarray:
-    """
-    `feature` : feature values over the duration of the audio.
-    `slice` : audio slice [start, end) in samples.
-    `hop` : hop size used in computing the feature.
-    """
-    hop = slices[-1][1] // feature.shape[0]
-    res =  np.fromiter((np.var(feature[slice[0]//hop : slice[1]//hop]) for slice in slices), dtype=float)
-    np.nan_to_num(res, copy=False)
-    res = res - np.min(res)
-    res = res/np.max(np.abs(res)) if np.any(res != 0) else res
-    return res
 
 def average_difference(feature : np.ndarray, slices : list[tuple[int, int]]) -> np.ndarray:
     """
