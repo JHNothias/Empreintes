@@ -36,7 +36,7 @@ def slice_wfm(flucowfm:fluid.FluidSingleOutput, method:Literal['onset', 'even'] 
     slicepoints = np.asarray([0] + list(fluid.onsetslice(flucowfm, metric=metric, threshold=slice_threshold, fftsettings=[1024, -1, -1], minslicelength=minslicelength)))
 
   elif method == 'even':
-    slicepoints = np.asarray(range(0, signal.shape[1], slicelength), np.int32)
+    slicepoints = np.asarray(range(0, signal.shape[1], int(slicelength)), np.int32)
 
   if n_interpolated_slices > 1:
     slicepoints_new = []
@@ -207,10 +207,11 @@ def wasserstein_matrix(spectrogram:np.ndarray, slices:(list[tuple[int, int]] | n
 
 def simple_preprocess(anarray : np.ndarray, rescale = True, topositive = True, useabs = True):
     res = anarray - np.min(anarray.flatten()) if topositive else anarray
-    if useabs:
-        res = res / np.nanmax(np.abs(res.flatten())) if rescale else res
-    else:
-        res = res / np.nanmax(res.flatten()) if rescale else res
+    if rescale:
+        if useabs:
+            res = res / np.nanmax(np.abs(res.flatten()))
+        else:
+            res = res / np.nanmax(res.flatten())
     return res
 
 def normalize_varmean(anarray):

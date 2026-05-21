@@ -11,6 +11,7 @@ python-flucoma
 jupyter
 colorset
 pyqtgraph
+dill
 colorcet
 ipython
 anywidget
