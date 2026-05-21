@@ -1,53 +1,42 @@
 dataset_type:
   presliced : false # sliceable, presliced
   groups : false
-
 # false, false : <dataset>/*<objects>.wav : need to slice each object and run an analysis per-object. Usecase : corpus of complete recordings.
 # false, true : <dataset>/*<objects>/*<samples>.wav : need to slice each sample but the analysis should be run on the collective space of slices of an object. Usecase : corpus of fragmented recordings, or recordings that should be considered to be of the same thing (ex : same environement at different times of day).
 # true, false : <dataset = object>/*<slices>.wav : the dataset is an object that should be analysed, each sample is a point. Usecase : presliced recording.
 # true, true : <dataset>/*<objects>/*<slices>.wav each sample represents a slice. Usecase : dataset of presliced recordings.
-
 audio_descriptors:
   FluCoMa:
     centroid:
       use : true
-      parameters :
-        ...
+      ...
     spread:
       use : true
-      parameters :
-        ...
+      ...
     skew:
       use : true
-      parameters :
-        ...
+      ...
     kurtosis:
       use : true
-      parameters :
-        ...
+      ...
     rolloff:
       use : true
-      parameters :
-        ...
+      ...
     flatness:
       use : true
-      parameters :
-        ...
+      ...
     crest:
       use : true
-      parameters :
-        ...
+      ...
   misc:
     roughness:
       use : true
-      parameters :
-        ...
+      ...
     time :
       use : true
-      parameters :
-        ...
+      ...
 descriptor_transforms :
-  # at least one must be used
+  # AT LEAST ONE must be used
   average :
     use : true
   variance :
@@ -58,13 +47,81 @@ descriptor_transforms :
     use : true
   novelty_hh :
     use : true
-    parameters :
-      kernel_size : 3
+    kernel_size : 3
   novelty_hnh :
     use : true
-    parameters :
-      kernel_size : 3
+    kernel_size : 3
   novelty_nhh :
     use : true
-    parameters :
+    kernel_size : 3
+crossing_graph :
+  # ONE AT MOST must be used
+  k_neighborhood :
+    use : true
+    k : 3
+    crossing_k : 3
+    keep_n_closest_crossings : 3 # setting this to 0 yields a knn graph.
+  radius :
+    use : false
+    radius : 0.1
+    keep_n_closest_crossings : 3
+  relative_radius :
+    use : false
+    proportion_of_points_in_radius : 0.01
+    keep_n_closest_crossings : 3
+slicing :
+  # only effective when dataset_type/presliced is false.
+  # ONE must be used
+  uniform :
+    use : true
+    slice_length_seconds : 2
+    n_interpolated_slices : 4
+metric :
+  filter :
+    # AT MOST ONE must be used
+    gaussian_blur:
+      use : false
       kernel_size : 3
+      freq_sigma : .5
+      time_sigma : .5
+      type :
+        # ONE must be used:
+        time_only :
+          use : false
+        frequency_only :
+          use : false
+        both :
+          use : true
+  graph_filtering:
+    use : true
+  repr :
+    # ONE must be used
+    mel :
+      use : true
+      n_mels : 512
+    stft :
+      use : false
+      ...
+    fft :
+      use : false
+      ...
+  algorithm :
+    # ONE must be used:
+    cosine :
+      use : true
+    wasserstein:
+      use : false
+non_uniform_slice_resolution_method :
+  # ONE must be used
+  align_start :
+    use : false
+  align_end :
+    use : false
+  align_first_impulse :
+    use : false
+  max_correspondance :
+    use : true
+    resolution : 30
+  min_correspondance :
+    use : false
+    resolution : 10
