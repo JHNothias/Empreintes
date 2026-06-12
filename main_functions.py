@@ -167,7 +167,10 @@ def _ti_spectrogram_concordance_matrix(spectrogram_T : ti.types.ndarray(), segme
             for x, y in ti.ndrange(minlen, S):
                 asum += spectrogram_T[x+si, y]**2
                 bsum += spectrogram_T[x+sj, y]**2
-            res[i, j] = 1 - res[i, j]/(ti.sqrt(asum) * ti.sqrt(bsum))
+            if not(asum <= 0 or bsum <= 0):
+                res[i, j] = 1 - res[i, j]/(ti.sqrt(asum) * ti.sqrt(bsum))
+            else:
+                res[i, j] = 1 - res[i, j]
             res[j, i] = res[i, j]
 
 def concordance_matrix_spectrogram(spectrogram:np.ndarray, slices:(list[tuple[int, int]] | np.ndarray), hop_length=512):
@@ -181,7 +184,8 @@ def concordance_matrix_spectrogram(spectrogram:np.ndarray, slices:(list[tuple[in
     ti_segments.from_numpy(slices)
     res.fill(0.)
     _ti_spectrogram_concordance_matrix(spectrogram, slices, res)
-    return res.to_numpy()
+    res = res.to_numpy()
+    return res
 
 def symmetrize(a, mode : Literal['u', 'l'] = 'u'):
     if mode == 'u':
