@@ -36,7 +36,7 @@ def slice_wfm(flucowfm:fluid.FluidSingleOutput, method:Literal['onset', 'even'] 
     slicepoints = np.asarray([0] + list(fluid.onsetslice(flucowfm, metric=metric, threshold=slice_threshold, fftsettings=[1024, -1, -1], minslicelength=minslicelength)))
 
   elif method == 'even':
-    slicepoints = np.asarray(range(0, signal.shape[1], slicelength), np.int32)
+    slicepoints = np.asarray(range(0, int(signal.shape[1]), int(slicelength)), np.int32)
 
   if n_interpolated_slices > 1:
     slicepoints_new = []
